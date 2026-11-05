@@ -12,6 +12,14 @@ async def echo(message):
     yield MessageEvent.text(message.text)
 
 
+async def wait_until(condition, timeout=2.0):
+    async def poll():
+        while not condition():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
 def test_runner_preserves_channel_instance() -> None:
     config = WeixinConfig.from_dict(
         {"accounts": [{"account_id": "a", "token": "secret"}]}
@@ -80,7 +88,7 @@ async def test_runner_processes_queued_message() -> None:
                 "item_list": [{"type": 1, "text_item": {"text": "hello"}}],
             }
         )
-        await asyncio.sleep(0.1)
+        await wait_until(lambda: runner._queue.qsize() == 0)
         assert runner._queue.qsize() == 0
         assert channel.parse_inbound(
             {
@@ -125,7 +133,7 @@ async def test_runner_calls_processor_for_queued_message() -> None:
                 "item_list": [{"type": 1, "text_item": {"text": "hello"}}],
             }
         )
-        await asyncio.sleep(0.1)
+        await wait_until(lambda: len(recorded) == 1)
         assert len(recorded) == 1
         assert recorded[0].text == "hello"
     finally:
@@ -165,7 +173,7 @@ async def test_runner_calls_pre_lock_handler() -> None:
                 "item_list": [{"type": 1, "text_item": {"text": "hello"}}],
             }
         )
-        await asyncio.sleep(0.1)
+        await wait_until(lambda: seen == ["hello", "locked:hello"])
         assert seen == ["hello", "locked:hello"]
     finally:
         channel.handle_inbound = original_handle  # type: ignore[method-assign]
@@ -228,7 +236,7 @@ async def test_runner_does_not_merge_group_context_messages() -> None:
         }
         runner.enqueue(payload)
         runner.enqueue(dict(payload))
-        await asyncio.sleep(0.1)
+        await wait_until(lambda: len(seen_batches) == 2)
         assert len(seen_batches) == 2
         assert all(isinstance(batch, list) and len(batch) == 1 for batch in seen_batches)
     finally:
